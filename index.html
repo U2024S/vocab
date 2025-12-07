@@ -3,283 +3,159 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vocab Trainer — GitHub Fixed</title>
+<title>Vocab Trainer — Revamped</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
-  .word-row:hover { background: rgba(2,6,23,0.03); }
-  .option-btn { transition: background .12s, transform .06s; }
-  .option-btn:active { transform: translateY(1px); }
+  .modal-bg { background: rgba(0,0,0,0.55); }
+  .pop { animation: pop .25s ease-out; }
+  @keyframes pop { from { transform: scale(.9); opacity: 0;} to {transform: scale(1); opacity:1;} }
 </style>
 </head>
-<body class="bg-gray-50 text-gray-900">
-  <div class="max-w-6xl mx-auto p-6">
+<body class="bg-gray-100 text-gray-900">
+  <div class="max-w-5xl mx-auto p-6">
     <header class="mb-6">
-      <h1 class="text-3xl font-bold">Vocab Trainer</h1>
-      <p class="text-sm text-gray-600 mt-1">
-        GitHub Pages version — JSON loaded with absolute HTTPS path.
-      </p>
+      <h1 class="text-4xl font-bold mb-2">Vocab Trainer</h1>
+      <p class="text-gray-600">Revamped clean UI • Pop‑out quiz • Progress tracking</p>
     </header>
 
-    <section class="mb-4 flex gap-3 items-center">
-      <input id="search" class="border p-2 rounded flex-1" placeholder="Search word, definition, sentence..." />
-      <select id="posFilter" class="border p-2 rounded">
-        <option value="">All POS</option>
-      </select>
-      <button id="newQuiz" class="bg-sky-600 text-white px-3 py-2 rounded">New Quiz</button>
-      <div id="score" class="ml-4 text-sm">Score: <strong>0/0</strong></div>
-      <button id="reset" class="ml-auto text-sm text-gray-600 underline">Reset</button>
+    <section class="flex gap-3 mb-4 items-center">
+      <input id="search" class="border p-2 rounded flex-1" placeholder="Search words..." />
+      <select id="posFilter" class="border p-2 rounded"><option value="">All POS</option></select>
+      <button id="triggerQuiz" class="bg-blue-600 text-white px-4 py-2 rounded">Start Quiz</button>
+      <div class="text-sm">Score: <strong id="score">0/0</strong></div>
+      <button id="reset" class="text-sm underline ml-auto">Reset</button>
     </section>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <div class="md:col-span-2">
-        <div class="mb-2 font-semibold">Words <span id="count" class="text-sm text-gray-600"></span></div>
-        <div id="wordList" class="border rounded p-2 max-h-[65vh] overflow-auto bg-white"></div>
+    <div class="border rounded bg-white p-3 max-h-[70vh] overflow-auto" id="wordList"></div>
+  </div>
+
+  <!-- Quiz Modal -->
+  <div id="quizModal" class="fixed inset-0 hidden modal-bg flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 pop">
+      <h2 class="text-xl font-bold mb-3">Quiz</h2>
+      <div id="blank" class="text-lg mb-4 font-medium"></div>
+      <div id="options" class="grid gap-2"></div>
+      <div id="result" class="mt-4 text-lg"></div>
+      <div class="flex justify-end mt-6 gap-2">
+        <button id="nextQuiz" class="bg-blue-600 text-white px-4 py-2 rounded">Next</button>
+        <button id="closeQuiz" class="border px-4 py-2 rounded">Close</button>
       </div>
-
-      <aside>
-        <div class="border rounded p-4 mb-4 bg-white">
-          <h2 class="font-semibold mb-2">Details</h2>
-          <div id="details" class="text-sm text-gray-700">Select a word to see details.</div>
-        </div>
-
-        <div class="border rounded p-4 bg-white">
-          <h2 class="font-semibold mb-2">Quiz</h2>
-          <div id="quizArea" class="text-sm text-gray-700">
-            <div id="noQuiz">No active quiz. Click “New Quiz”.</div>
-            <div id="quizPanel" style="display:none">
-              <div class="text-gray-700">Fill in the blank:</div>
-              <div id="blank" class="mt-2 font-medium"></div>
-              <div id="options" class="mt-3 grid grid-cols-1 gap-2"></div>
-              <div id="result" class="mt-3"></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="text-xs text-gray-500 mt-4">
-          Local storage keys: vocab_known_v1, vocab_progress_v1
-        </div>
-      </aside>
     </div>
-
-    <footer class="mt-6 text-sm text-gray-600">
-      Hosted on GitHub Pages. JSON loaded via absolute URL.
-    </footer>
   </div>
 
 <script>
-(() => {
-  // ABSOLUTE PATH FOR GITHUB PAGES
-  const JSON_PATH = "https://u2024s.github.io/vocab/sat_vocab_clean2.json";
+// === LOAD DATA ===
+let DATA = [];
+fetch('sat_vocab_clean2.json').then(r=>r.json()).then(d=>{ DATA = d; init(); });
 
-  const KNOWN_KEY = "vocab_known_v1";
-  const PROGRESS_KEY = "vocab_progress_v1";
+// === STATE ===
+let words = [];
+let known = JSON.parse(localStorage.getItem('known')||'{}');
+let progress = JSON.parse(localStorage.getItem('prog')||'{"correct":0,"total":0}');
+let quizWord = null;
 
-  let words = [];
-  let known = loadJSON(KNOWN_KEY) || {};
-  let progress = loadJSON(PROGRESS_KEY) || { correct: 0, total: 0 };
-  let currentQuiz = null;
+// === SHORTCUTS ===
+const $ = s => document.querySelector(s);
 
-  const $ = sel => document.querySelector(sel);
-  const elWordList = $("#wordList");
-  const elCount = $("#count");
-  const elPosFilter = $("#posFilter");
-  const elSearch = $("#search");
-  const elScore = $("#score strong");
-  const elDetails = $("#details");
-  const elNewQuiz = $("#newQuiz");
-  const elReset = $("#reset");
-  const elQuizPanel = $("#quizPanel");
-  const elNoQuiz = $("#noQuiz");
-  const elBlank = $("#blank");
-  const elOptions = $("#options");
-  const elResult = $("#result");
+// === INIT ===
+function init(){
+  words = DATA.map((w,i)=>({_id:i, ...w}));
+  populatePOS();
+  renderList(words);
+  $('#score').textContent = `${progress.correct}/${progress.total}`;
 
-  function saveJSON(k, v) {
-    localStorage.setItem(k, JSON.stringify(v));
-  }
-  function loadJSON(k) {
-    try { return JSON.parse(localStorage.getItem(k)); }
-    catch (e) { return null; }
-  }
+  $('#search').addEventListener('input',applyFilters);
+  $('#posFilter').addEventListener('change',applyFilters);
+  $('#triggerQuiz').addEventListener('click',startQuiz);
+  $('#closeQuiz').addEventListener('click',()=>$('#quizModal').classList.add('hidden'));
+  $('#nextQuiz').addEventListener('click',startQuiz);
+  $('#reset').addEventListener('click',()=>{ if(confirm('Reset progress?')){known={};progress={correct:0,total:0};save();renderList(words);} });
+}
 
-  function shuffle(arr) {
-    for (let i=arr.length-1;i>0;i--) {
-      const j = Math.floor(Math.random()*(i+1));
-      [arr[i], arr[j]]=[arr[j], arr[i]];
-    }
-    return arr;
-  }
+function populatePOS(){
+  const set = new Set(words.map(w=>w.pos));
+  $('#posFilter').innerHTML = '<option value="">All POS</option>' + [...set].map(p=>`<option value="${p}">${p}</option>`).join('');
+}
 
-  function escapeReg(s){
-    return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-  }
-
-  function buildIndexable(arr){
-    return arr.map((w,i)=>({
-      _id: i,
-      word: (w.word||"").trim(),
-      pos: (w.pos||"").trim(),
-      definition: (w.definition||"").replace(/\s+/g," ").trim(),
-      sentence: (w.sentence||"").replace(/\s+/g," ").trim()
-    }));
-  }
-
-  function renderList(filtered){
-    elWordList.innerHTML = "";
-    filtered.forEach(w=>{
-      const row = document.createElement("div");
-      row.className = "p-2 border-b last:border-b-0 flex items-start gap-3 word-row";
-      row.innerHTML = `
-        <div class="w-24 font-mono">${w.word}</div>
-        <div class="flex-1">
-          <div class="text-sm"><em>${w.pos}</em> — ${w.definition}</div>
-          <div class="text-xs text-gray-500 mt-1">${w.sentence}</div>
-          <div class="mt-2 text-sm flex gap-2">
-            <button class="view-btn underline">View</button>
-            <button class="mark-btn">${known[w._id] ? "Unmark Known" : "Mark Known"}</button>
-          </div>
-        </div>
-        <div>
-          <input type="checkbox" class="known-chk" ${known[w._id]?"checked":""}>
-        </div>
-      `;
-      row.querySelector(".view-btn").addEventListener("click", ()=>showDetails(w));
-      row.querySelector(".mark-btn").addEventListener("click", ()=>{ toggleKnown(w._id); render(); });
-      row.querySelector(".known-chk").addEventListener("change", ()=>{ toggleKnown(w._id); render(); });
-      elWordList.appendChild(row);
-    });
-    elCount.textContent = `(${filtered.length})`;
-  }
-
-  function showDetails(w){
-    elDetails.innerHTML = `
-      <div class="text-xl font-bold">${w.word}</div>
-      <div class="text-sm italic">${w.pos}</div>
-      <div class="mt-2">${w.definition}</div>
-      <div class="mt-2 text-gray-600">${w.sentence}</div>
-      <div class="mt-3 flex gap-2">
-        <button id="detailMark" class="px-3 py-1 bg-sky-600 text-white rounded">${known[w._id] ? "Unmark Known" : "Mark Known"}</button>
-        <button id="detailClose" class="px-3 py-1 border rounded">Close</button>
+// === RENDER WORD LIST ===
+function renderList(arr){
+  const box = $('#wordList');
+  box.innerHTML = '';
+  arr.forEach(w=>{
+    const row = document.createElement('div');
+    row.className = 'p-3 border-b flex justify-between items-start hover:bg-gray-50';
+    row.innerHTML = `
+      <div>
+        <div class='font-semibold text-lg'>${w.word}</div>
+        <div class='text-sm italic text-gray-600'>${w.pos}</div>
+        <div class='text-sm mt-1'>${w.definition}</div>
+        <div class='text-xs text-gray-500 mt-1'>${w.sentence}</div>
       </div>
-    `;
-    $("#detailMark").addEventListener("click", ()=>{ toggleKnown(w._id); showDetails(w); render(); });
-    $("#detailClose").addEventListener("click", ()=>{ elDetails.textContent="Select a word to see details."; });
-  }
-
-  function toggleKnown(id){
-    if (known[id]) delete known[id];
-    else known[id]=true;
-    saveJSON(KNOWN_KEY, known);
-  }
-
-  function applyFilters(){
-    const q = elSearch.value.trim().toLowerCase();
-    const pos = elPosFilter.value;
-    const filtered = words.filter(w=>{
-      if(pos && w.pos!==pos) return false;
-      if(!q) return true;
-      return w.word.toLowerCase().includes(q) ||
-             w.definition.toLowerCase().includes(q) ||
-             w.sentence.toLowerCase().includes(q);
-    });
-    renderList(filtered);
-  }
-
-  function populatePOSOptions(arr){
-    const set = new Set(arr.map(w=>w.pos).filter(Boolean));
-    elPosFilter.innerHTML = '<option value="">All POS</option>' +
-      Array.from(set).sort().map(o=>`<option value="${o}">${o}</option>`).join("");
-  }
-
-  function makeQuiz(){
-    if(!words.length) return;
-    const correct = words[Math.floor(Math.random()*words.length)];
-    let blanked = correct.sentence;
-    const pattern = new RegExp("\\b"+escapeReg(correct.word)+"\\b","i");
-    if(pattern.test(blanked)){
-      blanked = blanked.replace(pattern,"_____");
-    } else {
-      blanked = blanked.replace(/\b\w+\b/, "_____");
-    }
-
-    let pool = words.filter(w=>w._id!==correct._id && w.pos===correct.pos);
-    shuffle(pool);
-    let distractors = pool.slice(0,3).map(w=>w.word);
-    if(distractors.length<3){
-      let others = words.filter(w=>w._id!==correct._id);
-      shuffle(others);
-      distractors = distractors.concat(others.slice(0,3-distractors.length).map(w=>w.word));
-    }
-
-    const options = shuffle([correct.word, ...distractors]);
-    currentQuiz = { correct, blanked, options };
-    showQuiz();
-  }
-
-  function showQuiz(){
-    if(!currentQuiz){
-      elQuizPanel.style.display="none";
-      elNoQuiz.style.display="block";
-      return;
-    }
-    elNoQuiz.style.display="none";
-    elQuizPanel.style.display="block";
-    elBlank.textContent = currentQuiz.blanked;
-    elOptions.innerHTML = "";
-    elResult.innerHTML = "";
-    currentQuiz.options.forEach(opt=>{
-      const btn = document.createElement("button");
-      btn.className = "option-btn p-2 border rounded";
-      btn.textContent = opt;
-      btn.addEventListener("click", ()=>answerQuiz(opt));
-      elOptions.appendChild(btn);
-    });
-  }
-
-  function answerQuiz(choice){
-    const ok = choice.toLowerCase() === currentQuiz.correct.word.toLowerCase();
-    elResult.innerHTML = `<div class="p-2 rounded ${ok?"bg-green-100":"bg-red-100"}">
-      ${ok?"Correct!":"Incorrect — Answer: "+currentQuiz.correct.word}
-    </div>`;
-    progress.total++;
-    if(ok) progress.correct++;
-    saveJSON(PROGRESS_KEY, progress);
-    elScore.textContent = `${progress.correct}/${progress.total}`;
-  }
-
-  async function init(){
-    try{
-      const r = await fetch(JSON_PATH);
-      const data = await r.json();
-      words = buildIndexable(data);
-    } catch(e){
-      console.error("Failed to load JSON", e);
-      words = [];
-    }
-
-    populatePOSOptions(words);
-    applyFilters();
-    elScore.textContent = `${progress.correct}/${progress.total}`;
-  }
-
-  elSearch.addEventListener("input", applyFilters);
-  elPosFilter.addEventListener("change", applyFilters);
-  elNewQuiz.addEventListener("click", makeQuiz);
-  elReset.addEventListener("click", ()=>{
-    if(confirm("Reset progress and known words?")){
-      known = {};
-      progress = {correct:0,total:0};
-      saveJSON(KNOWN_KEY,known);
-      saveJSON(PROGRESS_KEY,progress);
-      elScore.textContent = "0/0";
-      applyFilters();
-    }
+      <div class='text-right'>
+        <label class='text-sm'>Known
+          <input type='checkbox' ${known[w._id]?'checked':''} data-id='${w._id}' class='knownChk'>
+        </label>
+      </div>`;
+    box.appendChild(row);
   });
+  document.querySelectorAll('.knownChk').forEach(ch=>{
+    ch.addEventListener('change',()=>{
+      const id = ch.dataset.id;
+      if(ch.checked) known[id]=true; else delete known[id];
+      save();
+    });
+  });
+}
 
-  function render(){ applyFilters(); }
+// === FILTER ===
+function applyFilters(){
+  const q = $('#search').value.toLowerCase();
+  const pos = $('#posFilter').value;
+  const res = words.filter(w=>{
+    if(pos && w.pos!==pos) return false;
+    return w.word.toLowerCase().includes(q) || w.definition.toLowerCase().includes(q) || w.sentence.toLowerCase().includes(q);
+  });
+  renderList(res);
+}
 
-  init();
-})();
+// === QUIZ ===
+function startQuiz(){
+  quizWord = words[Math.floor(Math.random()*words.length)];
+  let blank = quizWord.sentence.replace(new RegExp(`\\b${quizWord.word}\\b`,'i'),'_____');
+  $('#blank').textContent = blank;
+
+  let opts = words.filter(w=>w.pos===quizWord.pos && w._id!==quizWord._id).slice(0,3).map(w=>w.word);
+  while(opts.length<3) opts.push(words[Math.floor(Math.random()*words.length)].word);
+  opts = [quizWord.word,...opts].sort(()=>Math.random()-0.5);
+
+  $('#options').innerHTML = '';
+  opts.forEach(o=>{
+    const b=document.createElement('button');
+    b.className='p-2 border rounded w-full text-left';
+    b.textContent=o;
+    b.onclick=()=>answer(o);
+    $('#options').appendChild(b);
+  });
+  $('#result').textContent='';
+  $('#quizModal').classList.remove('hidden');
+}
+
+function answer(o){
+  progress.total++;
+  if(o===quizWord.word){
+    progress.correct++;
+    $('#result').innerHTML = `<div class='text-green-600 font-semibold'>Correct!</div>`;
+  } else {
+    $('#result').innerHTML = `<div class='text-red-600 font-semibold'>Incorrect — ${quizWord.word}</div>`;
+  }
+  $('#score').textContent = `${progress.correct}/${progress.total}`;
+  save();
+}
+
+function save(){
+  localStorage.setItem('known',JSON.stringify(known));
+  localStorage.setItem('prog',JSON.stringify(progress));
+}
 </script>
 </body>
 </html>
