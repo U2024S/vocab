@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vocab Studio — Fixed (blanking + known)</title>
+<title>Vocab Studio — Fixed Release</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
+  body { -webkit-font-smoothing: antialiased; }
   .card-hover:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(12,14,20,0.06); }
   .modal-backdrop { background: rgba(2,6,23,0.45); }
   .fade-in { animation: fadeIn .18s ease-out; }
@@ -92,8 +93,7 @@
   </div>
 
 <script>
-/* ======= Fixed Vocab Studio (blank variants + consistent Known) ======= */
-
+// Fixed Vocab Studio — debugged and stable
 const JSON_LOCATIONS = [
   "https://u2024s.github.io/vocab/sat_vocab_clean2.json",
   "./sat_vocab_clean2.json",
@@ -101,7 +101,9 @@ const JSON_LOCATIONS = [
 ];
 
 const FALLBACK_JSON = [
-  { word: "abate", pos: "v", definition: "to reduce, lessen", sentence: "The rain poured down for a while, then abated." }
+  { word: "abate", pos: "v", definition: "to reduce, lessen", sentence: "The rain poured down for a while, then abated." },
+  { word: "abase", pos: "v", definition: "to humiliate, degrade", sentence: "After being overthrown and abased, the deposed leader offered to bow down to his conqueror." },
+  { word: "abduct", pos: "v", definition: "to kidnap, take by force", sentence: "The evildoers abducted the fairy princess from her happy home." }
 ];
 
 const STORAGE_STATS = "vocabstudio_stats_v1";
@@ -138,36 +140,30 @@ const $markKnown = $('markKnown');
 
 let CURRENT = { word: null, options: [] };
 
-// Load vocab trying multiple locations
 async function loadVocab(){
   for(const p of JSON_LOCATIONS){
     try{
-      const r = await fetch(p, {cache: 'no-store'});
+      const r = await fetch(p, {cache:'no-store'});
       if(!r.ok) throw new Error('not ok');
       const data = await r.json();
       if(Array.isArray(data) && data.length) return data;
-    }catch(e){}
+    }catch(e){
+      // continue to next
+    }
   }
   return FALLBACK_JSON;
 }
 
-// init
+function saveAndRefresh(){ saveJSON(STORAGE_STATS, STATS); saveJSON(STORAGE_META, META); renderStats(); renderGrid(filteredWords()); }
+
 async function init(){
   const data = await loadVocab();
-  WORDS = data.map((w,i)=>({
-    _id: i,
-    word: (w.word||'').trim(),
-    pos: (w.pos||'').trim(),
-    definition: (w.definition||'').trim(),
-    sentence: (w.sentence||'').trim()
-  }));
-  // populate pos filter
+  WORDS = data.map((w,i)=>({ _id:i, word:(w.word||'').trim(), pos:(w.pos||'').trim(), definition:(w.definition||'').trim(), sentence:(w.sentence||'').trim() }));
   const posSet = new Set(WORDS.map(w=>w.pos).filter(Boolean));
-  $posFilter.innerHTML = '<option value="">All POS</option>' + [...posSet].sort().map(p=>`<option value="${p}">${p}</option>`).join('');
+  $posFilter.innerHTML = '<option value=\"\">All POS</option>' + [...posSet].sort().map(p=>`<option value=\"${p}\">${p}</option>`).join('');
   renderStats(); renderGrid(WORDS); wireUI();
 }
 
-// UI wiring
 function wireUI(){
   $search.addEventListener('input', onFilterChange);
   $posFilter.addEventListener('change', onFilterChange);
@@ -178,11 +174,10 @@ function wireUI(){
   $('exportBtn').addEventListener('click', exportData);
   $('importBtn').addEventListener('click', importData);
   $('resetBtn').addEventListener('click', resetAll);
-  $markKnown.addEventListener('click', ()=>{ if(CURRENT.word) toggleKnown(CURRENT.word._id); updateQuizStats(CURRENT.word._id); });
-  window.addEventListener('keydown', e=> { if(e.key==='Escape' && !$quizModal.classList.contains('hidden')) closeQuiz(); });
+  $markKnown.addEventListener('click', ()=>{ if(CURRENT.word) { toggleKnown(CURRENT.word._id); updateQuizStats(CURRENT.word._id); } });
+  window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !$quizModal.classList.contains('hidden')) closeQuiz(); });
 }
 
-// render grid
 function renderGrid(list){
   $wordGrid.innerHTML = '';
   list.forEach(w=>{
@@ -214,49 +209,32 @@ function renderGrid(list){
     `;
     $wordGrid.appendChild(card);
   });
-
-  // attach events
   qAll('.open-detail').forEach(btn=> btn.addEventListener('click', e=> showDetail(WORDS[+e.currentTarget.dataset.id])));
   qAll('.quiz-me').forEach(btn=> btn.addEventListener('click', e=> openQuiz(generateQuestion(+e.currentTarget.dataset.id))));
-  qAll('.known-toggle').forEach(cb=> cb.addEventListener('change', e=> { toggleKnown(+e.currentTarget.dataset.id); renderStats(); renderGrid(filteredWords()); }));
+  qAll('.known-toggle').forEach(cb=> cb.addEventListener('change', e=> { toggleKnown(+e.currentTarget.dataset.id); saveAndRefresh(); }));
 }
 
-// filters
 function onFilterChange(){ renderGrid(filteredWords()); renderStats(); }
-function filteredWords(){
-  const qStr = $search.value.trim().toLowerCase();
-  const pos = $posFilter.value;
-  return WORDS.filter(w=>{
-    if(pos && w.pos!==pos) return false;
-    if(!qStr) return true;
-    return w.word.toLowerCase().includes(qStr) || w.definition.toLowerCase().includes(qStr) || w.sentence.toLowerCase().includes(qStr);
-  });
-}
+function filteredWords(){ const qStr = $search.value.trim().toLowerCase(); const pos = $posFilter.value; return WORDS.filter(w=>{ if(pos && w.pos!==pos) return false; if(!qStr) return true; return w.word.toLowerCase().includes(qStr) || w.definition.toLowerCase().includes(qStr) || w.sentence.toLowerCase().includes(qStr); }); }
 
-// show detail
 function showDetail(word){
   CURRENT.word = word;
   CURRENT.options = [];
   $blankSentence.textContent = `${word.word} — ${word.pos} — ${word.definition}`;
   $optionsList.innerHTML = `<div class="text-sm text-slate-600 italic">${word.sentence || '(no example sentence)'}</div>`;
   const s = STATS[word._id] || { attempts:0, correct:0, known:false };
-  $wordAttempts.textContent = s.attempts;
-  $wordCorrect.textContent = s.correct;
+  $wordAttempts.textContent = s.attempts; $wordCorrect.textContent = s.correct;
   $markKnown.textContent = s.known ? 'Known' : 'Known';
   $quizFeedback.innerHTML = '';
   $quizModal.classList.remove('hidden'); document.body.style.overflow = 'hidden';
 }
 
-// generate distractors and question
 function generateQuestion(preferredId){
   const target = (typeof preferredId === 'number') ? WORDS.find(w=>w._id===preferredId) : WORDS[Math.floor(Math.random()*WORDS.length)];
-  // same-pos pool first
   let pool = WORDS.filter(w=>w._id !== target._id && w.pos === target.pos);
   shuffle(pool);
   const distractors = [];
-  for(let i=0;i<pool.length && distractors.length<3;i++){
-    if(!distractors.includes(pool[i].word)) distractors.push(pool[i].word);
-  }
+  for(let i=0;i<pool.length && distractors.length<3;i++){ if(!distractors.includes(pool[i].word)) distractors.push(pool[i].word); }
   if(distractors.length < 3){
     const others = WORDS.filter(w=>w._id !== target._id && !distractors.includes(w.word));
     shuffle(others);
@@ -266,11 +244,10 @@ function generateQuestion(preferredId){
   return { word: target, options };
 }
 
-// Helper: create regex that matches word + common suffixes (ed, ing, s, en)
+// regex to match word + common suffixes
 function makeMorphRegex(word){
   if(!word) return null;
   const safe = escapeReg(word);
-  // allow optional common suffixes (ed, ing, s, en) and possessive 's
   return new RegExp('\\b(' + safe + ')(?:ed|ing|s|en|\\'s)?\\b', 'i');
 }
 
@@ -279,7 +256,6 @@ function openQuiz(question){
   CURRENT.word = question.word;
   CURRENT.options = (question.options || []).slice();
 
-  // Build blank sentence with morphological replacement
   const sent = CURRENT.word.sentence || '';
   const targetWord = CURRENT.word.word || '';
   const morphRegex = makeMorphRegex(targetWord);
@@ -288,14 +264,13 @@ function openQuiz(question){
   if(targetWord && morphRegex && morphRegex.test(sent)){
     blanked = sent.replace(morphRegex, '_____');
   } else {
-    // if no occurrence of (variants), prepend blank so answer not shown
     blanked = '_____  ' + (sent || '');
   }
   $blankSentence.textContent = blanked || '(no example sentence)';
 
-  // dedupe options and ensure correct present once
+  // dedupe and ensure correct present once
   const dedup = [];
-  CURRENT.options.forEach(o => { if(!dedup.some(x=>x.toLowerCase()===o.toLowerCase())) dedup.push(o); });
+  CURRENT.options.forEach(o=>{ if(!dedup.some(x=>x.toLowerCase()===o.toLowerCase())) dedup.push(o); });
   if(!dedup.some(x=>x.toLowerCase()===targetWord.toLowerCase())) dedup.unshift(targetWord);
   while(dedup.length>4) dedup.pop();
   if(dedup.length<4){
@@ -305,7 +280,6 @@ function openQuiz(question){
   }
   CURRENT.options = shuffle(dedup);
 
-  // render options
   $optionsList.innerHTML = '';
   CURRENT.options.forEach(opt=>{
     const btn = document.createElement('button');
@@ -316,130 +290,49 @@ function openQuiz(question){
   });
 
   const s = STATS[CURRENT.word._id] || { attempts:0, correct:0, known:false };
-  $wordAttempts.textContent = s.attempts;
-  $wordCorrect.textContent = s.correct;
+  $wordAttempts.textContent = s.attempts; $wordCorrect.textContent = s.correct;
   $markKnown.textContent = s.known ? 'Known' : 'Known';
   $quizFeedback.innerHTML = '';
   $quizModal.classList.remove('hidden'); document.body.style.overflow = 'hidden';
 }
 
-function closeQuiz(){
-  $quizModal.classList.add('hidden');
-  document.body.style.overflow = '';
-  CURRENT = { word: null, options: [] };
-}
+function closeQuiz(){ $quizModal.classList.add('hidden'); document.body.style.overflow = ''; CURRENT = { word:null, options:[] }; }
 
 function onAnswer(choice, buttonEl){
   if(!CURRENT.word) return;
-  // disable all option buttons to prevent multi-clicks
-  $optionsList.querySelectorAll('button').forEach(b=>b.disabled = true);
+  $optionsList.querySelectorAll('button').forEach(b=>b.disabled=true);
 
   const id = CURRENT.word._id;
   if(!STATS[id]) STATS[id] = { attempts:0, correct:0, known:false };
   STATS[id].attempts++; META.total++;
-
   const correct = choice.toLowerCase() === (CURRENT.word.word||'').toLowerCase();
   if(correct){ STATS[id].correct++; META.correct++; }
 
   saveJSON(STORAGE_STATS, STATS); saveJSON(STORAGE_META, META);
 
-  // feedback
   $quizFeedback.innerHTML = '';
   const fb = document.createElement('div');
   fb.className = correct ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold';
   fb.textContent = correct ? 'Correct!' : `Incorrect — Answer: ${CURRENT.word.word}`;
   $quizFeedback.appendChild(fb);
 
-  // update UI
-  $wordAttempts.textContent = STATS[id].attempts;
-  $wordCorrect.textContent = STATS[id].correct;
-  $score.textContent = `${META.correct}/${META.total}`;
-  renderStats();
+  $wordAttempts.textContent = STATS[id].attempts; $wordCorrect.textContent = STATS[id].correct;
+  $score.textContent = `${META.correct}/${META.total}`; renderStats();
 
-  // highlight chosen option
-  if(correct) buttonEl.classList.add('ring-2','ring-green-300');
-  else buttonEl.classList.add('ring-2','ring-red-300');
+  if(correct) buttonEl.classList.add('ring-2','ring-green-300'); else buttonEl.classList.add('ring-2','ring-red-300');
 }
 
-// toggle Known consistently
-function toggleKnown(id){
-  if(!STATS[id]) STATS[id] = { attempts:0, correct:0, known:false };
-  STATS[id].known = !STATS[id].known;
-  saveJSON(STORAGE_STATS, STATS);
-  renderStats();
-}
+function toggleKnown(id){ if(!STATS[id]) STATS[id] = { attempts:0, correct:0, known:false }; STATS[id].known = !STATS[id].known; saveAndRefresh(); }
+function updateQuizStats(id){ if(!STATS[id]) STATS[id] = { attempts:0, correct:0, known:false }; $wordAttempts.textContent = STATS[id].attempts; $wordCorrect.textContent = STATS[id].correct; $markKnown.textContent = STATS[id].known ? 'Known' : 'Known'; renderGrid(filteredWords()); renderStats(); }
 
-// helper to update quiz modal when toggling from modal
-function updateQuizStats(id){
-  if(!STATS[id]) STATS[id] = { attempts:0, correct:0, known:false };
-  $wordAttempts.textContent = STATS[id].attempts;
-  $wordCorrect.textContent = STATS[id].correct;
-  $markKnown.textContent = STATS[id].known ? 'Known' : 'Known';
-  renderGrid(filteredWords());
-  renderStats();
-}
+function renderStats(){ const total = WORDS.length; const known = Object.values(STATS).filter(s=>s.known).length; $totalWords.textContent = total; $knownCount.textContent = known; const attempted = Object.values(STATS).filter(s=>s.attempts>0); const avg = attempted.length ? Math.round((attempted.reduce((a,s)=>a + (s.correct/s.attempts),0)/attempted.length)*100) : 0; $avgAcc.textContent = attempted.length ? (avg + '%') : '—'; $score.textContent = `${META.correct}/${META.total}`; }
 
-// stats & rendering
-function renderStats(){
-  const total = WORDS.length;
-  const known = Object.values(STATS).filter(s=>s.known).length;
-  $totalWords.textContent = total;
-  $knownCount.textContent = known;
-  const attempted = Object.values(STATS).filter(s=>s.attempts>0);
-  const avg = attempted.length ? Math.round((attempted.reduce((a,s)=>a + (s.correct/s.attempts),0)/attempted.length)*100) : 0;
-  $avgAcc.textContent = attempted.length ? (avg + '%') : '—';
-  $score.textContent = `${META.correct}/${META.total}`;
-}
-
-// export/import/reset
-function exportData(){
-  const payload = { stats: STATS, meta: META, wordsCount: WORDS.length, exportedAt: (new Date()).toISOString() };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = 'vocabstudio_export.json'; document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-}
-function importData(){
-  const input = document.createElement('input'); input.type='file'; input.accept='application/json';
-  input.onchange = e => {
-    const f = e.target.files[0]; if(!f) return;
-    const r = new FileReader();
-    r.onload = ev => {
-      try{
-        const payload = JSON.parse(ev.target.result);
-        if(payload.stats) STATS = payload.stats;
-        if(payload.meta) META = payload.meta;
-        saveJSON(STORAGE_STATS, STATS); saveJSON(STORAGE_META, META);
-        renderStats(); renderGrid(filteredWords());
-        alert('Import complete');
-      }catch(err){ alert('Invalid JSON file'); }
-    };
-    r.readAsText(f);
-  };
-  input.click();
-}
-function resetAll(){
-  if(!confirm('Reset all progress and known words?')) return;
-  STATS = {}; META = { correct:0, total:0 };
-  saveJSON(STORAGE_STATS, STATS); saveJSON(STORAGE_META, META);
-  renderStats(); renderGrid(filteredWords());
-  alert('Reset done');
-}
-
-// filtering helpers
-function onFilterChange(){ renderGrid(filteredWords()); renderStats(); }
-function filteredWords(){
-  const qStr = $search.value.trim().toLowerCase();
-  const pos = $posFilter.value;
-  return WORDS.filter(w=>{
-    if(pos && w.pos!==pos) return false;
-    if(!qStr) return true;
-    return w.word.toLowerCase().includes(qStr) || w.definition.toLowerCase().includes(qStr) || w.sentence.toLowerCase().includes(qStr);
-  });
-}
+function exportData(){ const payload = { stats:STATS, meta:META, wordsCount:WORDS.length, exportedAt:(new Date()).toISOString() }; const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'}); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='vocabstudio_export.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+function importData(){ const input = document.createElement('input'); input.type='file'; input.accept='application/json'; input.onchange = e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload = ev=>{ try{ const payload=JSON.parse(ev.target.result); if(payload.stats) STATS=payload.stats; if(payload.meta) META=payload.meta; saveAndRefresh(); renderGrid(filteredWords()); alert('Import complete'); }catch(err){ alert('Invalid JSON file'); } }; r.readAsText(f); }; input.click(); }
+function resetAll(){ if(!confirm('Reset all progress and known words?')) return; STATS={}; META={correct:0,total:0}; saveAndRefresh(); renderGrid(filteredWords()); alert('Reset done'); }
 
 // boot
-(async()=>{ const data = await (async()=>{ for(const p of JSON_LOCATIONS){ try{ const r=await fetch(p,{cache:'no-store'}); if(!r.ok) continue; const d=await r.json(); if(Array.isArray(d) && d.length) return d; }catch(e){} } return FALLBACK_JSON; })(); WORDS = data.map((w,i)=>({ _id:i, word:(w.word||'').trim(), pos:(w.pos||'').trim(), definition:(w.definition||'').trim(), sentence:(w.sentence||'').trim() })); const posSet = new Set(WORDS.map(w=>w.pos).filter(Boolean)); $posFilter.innerHTML = '<option value=\"\">All POS</option>' + [...posSet].sort().map(p=>`<option value=\"${p}\">${p}</option>`).join(''); renderStats(); renderGrid(WORDS); wireUI(); })();
+(async()=>{ const data = await loadVocab(); WORDS = data.map((w,i)=>({ _id:i, word:(w.word||'').trim(), pos:(w.pos||'').trim(), definition:(w.definition||'').trim(), sentence:(w.sentence||'').trim() })); const posSet = new Set(WORDS.map(w=>w.pos).filter(Boolean)); $posFilter.innerHTML = '<option value=\"\">All POS</option>' + [...posSet].sort().map(p=>`<option value=\"${p}\">${p}</option>`).join(''); renderStats(); renderGrid(WORDS); wireUI(); })();
 </script>
 </body>
 </html>
