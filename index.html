@@ -3,11 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vocab Studio — WordBank + MCQ Quiz</title>
+<title>Vocab Studio — Fixed Quiz</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
-  /* small custom touches */
-  .card-hover:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(12, 14, 20, 0.06); }
+  .card-hover:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(12,14,20,0.06); }
   .modal-backdrop { background: rgba(2,6,23,0.45); }
   .fade-in { animation: fadeIn .18s ease-out; }
   @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
@@ -20,7 +19,6 @@
         <h1 class="text-3xl font-extrabold">Vocab Studio</h1>
         <p class="text-sm text-slate-600">Wordbank, tracking, and pop-up multiple-choice quizzes.</p>
       </div>
-
       <div class="ml-auto flex flex-col gap-2 w-72">
         <div class="flex gap-2">
           <input id="search" class="flex-1 border rounded px-3 py-2" placeholder="Search word / definition / sentence" />
@@ -28,12 +26,10 @@
             <option value="">All POS</option>
           </select>
         </div>
-
         <div class="flex gap-2">
           <button id="startQuiz" class="flex-1 bg-indigo-600 text-white px-3 py-2 rounded shadow hover:bg-indigo-700">Start Quiz</button>
           <button id="shuffleQuiz" title="Quickly generate a new question" class="bg-white border px-3 py-2 rounded">Shuffle</button>
         </div>
-
         <div class="flex items-center justify-between text-sm text-slate-700">
           <div>Score: <strong id="score">0/0</strong></div>
           <div class="flex gap-2">
@@ -88,7 +84,7 @@
           <div class="text-sm text-slate-600">Word attempts: <span id="wordAttempts">0</span> — Correct: <span id="wordCorrect">0</span></div>
           <div class="flex gap-2">
             <button id="nextQuestion" class="px-4 py-2 bg-indigo-600 text-white rounded">Next</button>
-            <button id="markKnown" class="px-4 py-2 border rounded">Mark Known</button>
+            <button id="markKnown" class="px-4 py-2 border rounded">Mark Understood</button>
           </div>
         </div>
       </div>
@@ -96,12 +92,8 @@
   </div>
 
 <script>
-/* ========= App: Vocab Studio (MCQ Popout) =========
-   - Original implementation (not a copy).
-   - Multiple-choice popout, per-word stats, tracking persisted in localStorage.
-*/
+/* ======= Vocab Studio (fixed quiz + mark-understood) ======= */
 
-// ----- Configuration & helper -----
 const FALLBACK_JSON = [
   { word: "abate", pos: "v", definition: "to reduce, lessen", sentence: "The rain poured down for a while, then abated." },
   { word: "benevolent", pos: "adj", definition: "marked by goodness", sentence: "The benevolent donor sponsored many scholarships." },
@@ -109,55 +101,51 @@ const FALLBACK_JSON = [
 ];
 
 const JSON_LOCATIONS = [
-  // try absolute GitHub Pages URL first (user's repo), then relative
   "https://u2024s.github.io/vocab/sat_vocab_clean2.json",
   "./sat_vocab_clean2.json",
   "/sat_vocab_clean2.json"
 ];
 
-const STORAGE_KEY_STATS = "vocabstudio_stats_v1"; // per-word stats: { id: { attempts, correct, known } }
-const STORAGE_KEY_META  = "vocabstudio_meta_v1";  // meta: { correct, total }
+const STORAGE_STATS = "vocabstudio_stats_v1";
+const STORAGE_META  = "vocabstudio_meta_v1";
 
-function saveJSON(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
-function loadJSON(k){ try{ const s=localStorage.getItem(k); return s ? JSON.parse(s) : null; }catch(e){ return null; } }
+function saveJSON(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+function loadJSON(k){ try{ const s=localStorage.getItem(k); return s?JSON.parse(s):null;}catch(e){return null;} }
 function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a; }
 function escapeReg(s){ return s.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&'); }
 
-// ----- State -----
 let WORDS = [];
-let STATS = loadJSON(STORAGE_KEY_STATS) || {}; // keyed by _id
-let META  = loadJSON(STORAGE_KEY_META) || { correct: 0, total: 0 };
+let STATS = loadJSON(STORAGE_STATS) || {};
+let META  = loadJSON(STORAGE_META) || { correct:0, total:0 };
 
-// ----- DOM -----
-const el = id => document.getElementById(id);
+const $ = id => document.getElementById(id);
 const q = sel => document.querySelector(sel);
 const qAll = sel => Array.from(document.querySelectorAll(sel));
 
-const $wordGrid = el('wordGrid');
-const $search = el('search');
-const $posFilter = el('posFilter');
-const $totalWords = el('totalWords');
-const $knownCount = el('knownCount');
-const $avgAcc = el('avgAcc');
-const $score = el('score');
+const $wordGrid = $('wordGrid');
+const $search = $('search');
+const $posFilter = $('posFilter');
+const $totalWords = $('totalWords');
+const $knownCount = $('knownCount');
+const $avgAcc = $('avgAcc');
+const $score = $('score');
 
-// quiz elements
-const $quizModal = el('quizModal');
-const $blankSentence = el('blankSentence');
-const $optionsList = el('optionsList');
-const $quizFeedback = el('quizFeedback');
-const $wordAttempts = el('wordAttempts');
-const $wordCorrect = el('wordCorrect');
-const $markKnown = el('markKnown');
+const $quizModal = $('quizModal');
+const $blankSentence = $('blankSentence');
+const $optionsList = $('optionsList');
+const $quizFeedback = $('quizFeedback');
+const $wordAttempts = $('wordAttempts');
+const $wordCorrect = $('wordCorrect');
+const $markKnown = $('markKnown');
 
 let CURRENT = { word: null, options: [] };
 
-// ----- Load JSON (tries multiple locations) -----
+// load vocab from possible locations
 async function loadVocab(){
   for(const path of JSON_LOCATIONS){
     try{
-      const r = await fetch(path, {cache: "no-store"});
-      if(!r.ok) throw new Error("not ok");
+      const r = await fetch(path, {cache:'no-store'});
+      if(!r.ok) throw new Error('not ok');
       const data = await r.json();
       if(Array.isArray(data) && data.length) return data;
     }catch(e){}
@@ -165,10 +153,8 @@ async function loadVocab(){
   return FALLBACK_JSON;
 }
 
-// ----- Init app -----
 async function init(){
   const data = await loadVocab();
-  // normalize and assign stable ids
   WORDS = data.map((w,i)=>({
     _id: i,
     word: (w.word||"").trim(),
@@ -176,43 +162,32 @@ async function init(){
     definition: (w.definition||"").trim(),
     sentence: (w.sentence||"").trim()
   }));
-
-  // populate POS filter
   const posSet = new Set(WORDS.map(w=>w.pos).filter(Boolean));
   $posFilter.innerHTML = '<option value="">All POS</option>' + [...posSet].sort().map(p=>`<option value="${p}">${p}</option>`).join('');
-
-  // render
-  renderStats();
-  renderGrid(WORDS);
-  wireUI();
+  renderStats(); renderGrid(WORDS); wireUI();
 }
 
-// ----- UI wiring -----
+// UI wiring
 function wireUI(){
   $search.addEventListener('input', onFilterChange);
   $posFilter.addEventListener('change', onFilterChange);
-  el('startQuiz').addEventListener('click', ()=>openQuiz(generateQuestion()));
-  el('shuffleQuiz').addEventListener('click', ()=>openQuiz(generateQuestion()));
-  el('closeQuiz').addEventListener('click', closeQuiz);
-  el('nextQuestion').addEventListener('click', ()=>openQuiz(generateQuestion()));
-  el('exportBtn').addEventListener('click', exportData);
-  el('importBtn').addEventListener('click', importData);
-  el('resetBtn').addEventListener('click', resetAll);
-  el('resetBtn').addEventListener('keydown', (e)=>{ if(e.key==='Enter') resetAll(); });
-  $markKnown.addEventListener('click', ()=>{ if(CURRENT.word) toggleKnown(CURRENT.word._id); updateQuizStats(CURRENT.word._id); });
-
-  // keyboard: Esc to close quiz
-  window.addEventListener('keydown', (e)=>{
-    if(e.key==='Escape' && !$quizModal.classList.contains('hidden')) closeQuiz();
-  });
+  $('startQuiz').addEventListener('click', ()=> openQuiz(generateQuestion()));
+  $('shuffleQuiz').addEventListener('click', ()=> openQuiz(generateQuestion()));
+  $('closeQuiz').addEventListener('click', closeQuiz);
+  $('nextQuestion').addEventListener('click', ()=> openQuiz(generateQuestion()));
+  $('exportBtn').addEventListener('click', exportData);
+  $('importBtn').addEventListener('click', importData);
+  $('resetBtn').addEventListener('click', resetAll);
+  $markKnown.addEventListener('click', ()=>{ if(CURRENT.word) { markUnderstood(CURRENT.word._id); updateQuizStats(CURRENT.word._id); } });
+  window.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && !$quizModal.classList.contains('hidden')) closeQuiz(); });
 }
 
-// ----- Rendering grid -----
+// Grid render
 function renderGrid(list){
   $wordGrid.innerHTML = '';
   list.forEach(w=>{
-    const stats = STATS[w._id] || { attempts:0, correct:0, known:false };
-    const acc = stats.attempts ? Math.round(100*stats.correct/stats.attempts) + '%' : '—';
+    const s = STATS[w._id] || { attempts:0, correct:0, known:false };
+    const acc = s.attempts ? Math.round(100*s.correct/s.attempts) + '%' : '—';
     const card = document.createElement('article');
     card.className = 'bg-white p-4 rounded-lg shadow-sm card-hover';
     card.innerHTML = `
@@ -225,7 +200,6 @@ function renderGrid(list){
           <div class="text-sm text-slate-700 mt-2">${w.definition}</div>
           <div class="text-xs text-slate-500 mt-2 italic">${w.sentence}</div>
         </div>
-
         <div class="flex flex-col items-end gap-2">
           <div class="text-xs text-slate-600">Acc: <strong>${acc}</strong></div>
           <div class="flex gap-2">
@@ -233,21 +207,20 @@ function renderGrid(list){
             <button data-id="${w._id}" class="quiz-me text-xs px-2 py-1 bg-indigo-600 text-white rounded">Quiz</button>
           </div>
           <label class="mt-2 text-xs text-slate-600">
-            Known <input data-id="${w._id}" type="checkbox" ${stats.known ? 'checked' : ''} class="ml-1 known-toggle" />
+            Known <input data-id="${w._id}" type="checkbox" ${s.known ? 'checked' : ''} class="ml-1 known-toggle" />
           </label>
         </div>
       </div>
     `;
     $wordGrid.appendChild(card);
   });
-
-  // attach events
+  // attach events after DOM created
   qAll('.open-detail').forEach(btn=> btn.addEventListener('click', e=> showDetail(WORDS[+e.currentTarget.dataset.id])));
   qAll('.quiz-me').forEach(btn=> btn.addEventListener('click', e=> openQuiz(generateQuestion(+e.currentTarget.dataset.id))));
   qAll('.known-toggle').forEach(cb=> cb.addEventListener('change', e=> { toggleKnown(+e.currentTarget.dataset.id); renderStats(); renderGrid(filteredWords()); }));
 }
 
-// ----- Filters -----
+// Filters
 function onFilterChange(){ renderGrid(filteredWords()); renderStats(); }
 function filteredWords(){
   const qStr = $search.value.trim().toLowerCase();
@@ -259,62 +232,91 @@ function filteredWords(){
   });
 }
 
-// ----- Details modal (small) -----
+// Details (open quiz modal in detail mode)
 function showDetail(word){
-  // reuse quiz modal for details style (or build simple alert)
-  const prev = CURRENT.word;
-  openQuiz({ word, options: [] , isDetail:true });
+  // open quiz modal but show details and allow marking known
+  CURRENT.word = word;
+  CURRENT.options = [];
+  // Display details in blank area
+  $blankSentence.textContent = `${word.word} — ${word.pos} — ${word.definition}`;
+  $optionsList.innerHTML = `<div class="text-sm text-slate-600 italic">${word.sentence || '(no example sentence)'}</div>`;
+  const s = STATS[word._id] || { attempts:0, correct:0, known:false };
+  $wordAttempts.textContent = s.attempts;
+  $wordCorrect.textContent = s.correct;
+  $markKnown.textContent = s.known ? 'Unmark Known' : 'Mark Understood';
+  $quizFeedback.innerHTML = '';
+  $quizModal.classList.remove('hidden'); document.body.style.overflow = 'hidden';
 }
 
-// ----- Quiz logic -----
+// Quiz generation & open
 function generateQuestion(preferredId){
-  // choose a target word
   const target = (typeof preferredId === 'number') ? WORDS.find(w=>w._id===preferredId) : WORDS[Math.floor(Math.random()*WORDS.length)];
-  // build distractors: same POS where possible
-  let pool = WORDS.filter(w => w._id !== target._id && w.pos === target.pos);
+  let pool = WORDS.filter(w=>w._id !== target._id && w.pos === target.pos);
   shuffle(pool);
-  let distractors = pool.slice(0,3).map(w=>w.word);
-
-  if(distractors.length < 3){
-    // fill with random other words
-    const others = WORDS.filter(w => w._id !== target._id && !distractors.includes(w.word));
-    shuffle(others);
-    distractors = distractors.concat(others.slice(0, 3 - distractors.length).map(w=>w.word));
+  let distractors = [];
+  for(let i=0;i<pool.length && distractors.length<3;i++){
+    if(!distractors.includes(pool[i].word)) distractors.push(pool[i].word);
   }
-  const options = shuffle([ target.word, ...distractors ]);
+  if(distractors.length < 3){
+    const others = WORDS.filter(w=>w._id !== target._id && !distractors.includes(w.word));
+    shuffle(others);
+    for(let i=0;i<others.length && distractors.length<3;i++) distractors.push(others[i].word);
+  }
+  const options = shuffle([target.word, ...distractors]);
   return { word: target, options };
 }
 
 function openQuiz(question){
   if(!question || !question.word) return;
   CURRENT.word = question.word;
-  CURRENT.options = question.options || [];
+  CURRENT.options = (question.options || []).slice();
 
-  // show sentence with blank
+  // Build blank sentence (FIX: never reveal answer)
   const sent = CURRENT.word.sentence || '';
-  const regex = new RegExp('\\\\b' + escapeReg(CURRENT.word.word) + '\\\\b', 'i');
-  const blanked = regex.test(sent) ? sent.replace(regex, '_____') : sent.replace(/\\b\\w+\\b/, '_____');
+  const targetWord = CURRENT.word.word || '';
+  const wordRegex = new RegExp('\\\\b' + escapeReg(targetWord) + '\\\\b', 'i');
+
+  let blanked;
+  if(targetWord && wordRegex.test(sent)){
+    blanked = sent.replace(wordRegex, '_____');
+  } else {
+    // If sentence doesn't contain the exact word, prepend a blank instead of revealing answer inside.
+    blanked = '_____  ' + (sent || '');
+  }
   $blankSentence.textContent = blanked || '(no example sentence)';
 
-  // options
+  // Build unique options (ensure no duplicates)
+  const deduped = [];
+  CURRENT.options.forEach(o=> { if(!deduped.includes(o)) deduped.push(o); });
+  // ensure correct present
+  if(!deduped.map(x=>x.toLowerCase()).includes(targetWord.toLowerCase())) deduped.unshift(targetWord);
+  // trim to 4
+  while(deduped.length > 4) deduped.pop();
+  // fill if less than 4
+  if(deduped.length < 4){
+    const others = WORDS.map(w=>w.word).filter(w=> !deduped.includes(w));
+    shuffle(others);
+    while(deduped.length<4 && others.length) deduped.push(others.shift());
+  }
+  CURRENT.options = shuffle(deduped);
+
+  // render options
   $optionsList.innerHTML = '';
-  CURRENT.options.forEach(opt => {
+  CURRENT.options.forEach(opt=>{
     const btn = document.createElement('button');
     btn.className = 'text-left p-3 border rounded bg-white hover:bg-slate-50';
     btn.textContent = opt;
-    btn.addEventListener('click', ()=> onAnswer(opt, btn) );
+    btn.addEventListener('click', ()=> onAnswer(opt, btn));
     $optionsList.appendChild(btn);
   });
 
-  // per-word attempts display
+  // stats for this word
   const s = STATS[CURRENT.word._id] || { attempts:0, correct:0, known:false };
   $wordAttempts.textContent = s.attempts;
   $wordCorrect.textContent = s.correct;
-  $markKnown.textContent = s.known ? 'Unmark Known' : 'Mark Known';
-
-  $quizFeedback.textContent = '';
-  $quizModal.classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
+  $markKnown.textContent = s.known ? 'Unmark Known' : 'Mark Understood';
+  $quizFeedback.innerHTML = '';
+  $quizModal.classList.remove('hidden'); document.body.style.overflow = 'hidden';
 }
 
 function closeQuiz(){
@@ -325,108 +327,98 @@ function closeQuiz(){
 
 function onAnswer(choice, buttonEl){
   if(!CURRENT.word) return;
-  // disable option buttons to prevent double-click confusion
-  $optionsList.querySelectorAll('button').forEach(b => b.disabled = true);
+  // disable buttons
+  $optionsList.querySelectorAll('button').forEach(b=>b.disabled = true);
 
-  // update per-word stats
   const id = CURRENT.word._id;
   if(!STATS[id]) STATS[id] = { attempts:0, correct:0, known:false };
-  STATS[id].attempts++;
-  META.total++;
+  STATS[id].attempts++; META.total++;
 
-  const correct = choice.toLowerCase() === CURRENT.word.word.toLowerCase();
+  const correct = choice.toLowerCase() === (CURRENT.word.word||'').toLowerCase();
   if(correct){ STATS[id].correct++; META.correct++; }
-  saveJSON(STORAGE_KEY_STATS, STATS);
-  saveJSON(STORAGE_KEY_META, META);
 
+  saveJSON(STORAGE_STATS, STATS); saveJSON(STORAGE_META, META);
   // feedback
+  $quizFeedback.innerHTML = '';
   const fb = document.createElement('div');
   fb.className = correct ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold';
   fb.textContent = correct ? 'Correct!' : `Incorrect — Answer: ${CURRENT.word.word}`;
-  $quizFeedback.innerHTML = '';
   $quizFeedback.appendChild(fb);
 
-  // update per-word display
+  // update UI
   $wordAttempts.textContent = STATS[id].attempts;
   $wordCorrect.textContent = STATS[id].correct;
-  $markKnown.textContent = STATS[id].known ? 'Unmark Known' : 'Mark Known';
+  $markKnown.textContent = STATS[id].known ? 'Unmark Known' : 'Mark Understood';
   $score.textContent = `${META.correct}/${META.total}`;
+  renderStats();
 
-  // visually mark chosen button
+  // highlight chosen option (green/red ring)
   if(correct) buttonEl.classList.add('ring-2','ring-green-300');
   else buttonEl.classList.add('ring-2','ring-red-300');
-
-  // also update grid display (acc, known)
-  renderStats();
-  setTimeout(()=> {
-    // re-enable options after short pause for next question convenience (or keep disabled)
-    // keep them disabled to avoid double answers, user clicks Next for next question
-  }, 350);
 }
 
-// ----- Known toggle -----
+function markUnderstood(id){
+  if(!STATS[id]) STATS[id] = { attempts:0, correct:0, known:false };
+  STATS[id].known = true;
+  saveJSON(STORAGE_STATS, STATS);
+  renderStats();
+  // update modal label
+  $markKnown.textContent = 'Unmark Known';
+}
 function toggleKnown(id){
   if(!STATS[id]) STATS[id] = { attempts:0, correct:0, known:false };
   STATS[id].known = !STATS[id].known;
-  saveJSON(STORAGE_KEY_STATS, STATS);
-  renderStats();
+  saveJSON(STORAGE_STATS, STATS);
 }
 
-// ----- Stats & rendering -----
+// stats & helpers
 function renderStats(){
   const total = WORDS.length;
-  const known = Object.values(STATS).filter(s=>s.known).length;
-  $totalWords.textContent = total;
-  $knownCount.textContent = known;
-  // average accuracy across words with attempts
+  const knownCount = Object.values(STATS).filter(s=>s.known).length;
+  $('totalWords').textContent = total;
+  $('knownCount').textContent = knownCount;
   const attempted = Object.values(STATS).filter(s=>s.attempts>0);
-  const avg = attempted.length ? Math.round( (attempted.reduce((a,s)=>a + (s.correct/s.attempts),0) / attempted.length)*100 ) : 0;
-  $avgAcc.textContent = attempted.length ? (avg + '%') : '—';
+  const avg = attempted.length ? Math.round((attempted.reduce((a,s)=>a + (s.correct/s.attempts),0)/attempted.length)*100) : 0;
+  $('avgAcc').textContent = attempted.length ? (avg + '%') : '—';
   $score.textContent = `${META.correct}/${META.total}`;
 }
 
-// ----- Export / Import / Reset -----
+// export / import / reset
 function exportData(){
   const payload = { stats: STATS, meta: META, wordsCount: WORDS.length, exportedAt: (new Date()).toISOString() };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'vocabstudio_export.json'; document.body.appendChild(a); a.click();
-  a.remove(); URL.revokeObjectURL(url);
+  const a = document.createElement('a'); a.href = url; a.download = 'vocabstudio_export.json'; document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
-
 function importData(){
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'application/json';
+  const input = document.createElement('input'); input.type='file'; input.accept='application/json';
   input.onchange = e => {
-    const f = e.target.files[0];
-    if(!f) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
       try{
         const payload = JSON.parse(ev.target.result);
         if(payload.stats) STATS = payload.stats;
         if(payload.meta) META = payload.meta;
-        saveJSON(STORAGE_KEY_STATS, STATS); saveJSON(STORAGE_KEY_META, META);
+        saveJSON(STORAGE_STATS, STATS); saveJSON(STORAGE_META, META);
         renderStats(); renderGrid(filteredWords());
         alert('Import complete');
       }catch(err){ alert('Invalid JSON file'); }
     };
-    reader.readAsText(f);
+    r.readAsText(f);
   };
   input.click();
 }
-
 function resetAll(){
   if(!confirm('Reset all progress and known words?')) return;
-  STATS = {}; META = { correct: 0, total: 0 };
-  saveJSON(STORAGE_KEY_STATS, STATS); saveJSON(STORAGE_KEY_META, META);
+  STATS = {}; META = { correct:0, total:0 };
+  saveJSON(STORAGE_STATS, STATS); saveJSON(STORAGE_META, META);
   renderStats(); renderGrid(filteredWords());
   alert('Reset done');
 }
 
-// ----- Boot -----
+// boot
 init();
 </script>
 </body>
